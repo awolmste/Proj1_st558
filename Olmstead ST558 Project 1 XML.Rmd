@@ -1,0 +1,305 @@
+---
+title: "Olmstead ST558 Project 1 XML"
+author: "Allen Olmstead"
+date: "October 18, 2019"
+output: 
+  html_document:
+    code_folding: hide
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, out.width = "800px")
+library(XML)
+library(knitr)
+library(tidyverse)
+```
+
+# XML Introduction
+
+XML stands for eXtensible Markup Langauge and is a file format that has similarities to an HTML file. Whereas an HTML file has a focus on displaying data, an XML file's focus is on the data itself as a data exchange format. In this aspect, an XML file simplifies data availability, sharing and transport. XML also stores data in a plain text format and is readibly readable by humans and machines. This type of file is often used in web development and for distributing data through websites.
+
+The structure of an XML file is a hierarchy of nested objects. At the base of this hierarchical tree is the root element. A node below this root element is a child of the root element. Other nodes at this level are siblings to this node. In a simple file, within these nodes are data specific to that node can be entered. 
+
+An example XML piece of code:  
+`<?xml version="1.0"?>`  
+`<grocery_list>`  
+&emsp;`<item>`  
+&emsp;&emsp;`<row>1</row>`  
+&emsp;&emsp;`<fruit>apple</fruit>`  
+&emsp;&emsp;`<color>red</color>`  
+&emsp;&emsp;`<variety>Cameo Crisp</variety>`  
+&emsp;`</item>`  
+&emsp;`<item>`  
+&emsp;&emsp;`<row>2</row>`  
+&emsp;&emsp;`<fruit>pear</fruit>`  
+&emsp;&emsp;`<color>green</color>`  
+&emsp;&emsp;`<variety>Anjou</variety>`  
+&emsp;`</item>`  
+`</grocery_list>`  
+
+The root node here is `grocery_list`. The child of the root element is `item` and these can be thought of as rows in a data frame.  The nodes beneath this (e.g., `row`, `fruit`) store data in this example and can be thought of as columns in data frame. Note that `vareity` could contain additional elements as a further nested node.
+
+# Packages for XML Import
+
+There are two major packages for the importation of XML files into R.  Both packages can also export data frames as XML files.
+
+## XML
+
+The main function within this package for reading in XML files are `xmlParse` which takes the XML file as an argument and returns an object of class `XMLInternalDocument`. The function, `xmlToDataFrame` can be used to create a data frame from an XML document that has a shallow structure whereby each node corresponds to an observation and each of its sub-elements correspond to a variable. 
+
+## xml2
+
+With this package XML files are read in with the function `read_xlm`. An advantage of this package is that it is more compatible with the `dplyr` package. 
+
+# Example Data File
+
+Data file was downloaded from [data.gov](https://catalog.data.gov/dataset/chicago-public-schools-elementary-school-progress-report-card-2012-2013-ee91e).
+
+Data description from the site:
+
+>Chicago Public Schools - Elementary School Progress Report Card (2012-2013) 
+
+>This dataset shows the 2012 School Progress Report Card data elements for each CPS elementary school. The report card is an annual summary of how the school is doing. For more information on the School Progress Report Cards, please see http://cps.edu/Schools/Pages/SchoolProgressReportCards.aspx. 
+
+The original data set contains the following variables for 460 schools in Chicago:  
+**School identifiers**  
+Unique: `school_id`, `school_short_name`, `school_name`, `phone_number`, `website`  
+Categorical: `managed_by_network`, `geographic_network`, `school_track`
+
+**School location information**  
+Unique: `street_adress`, `x_coordinate`, `y_coordinate`, `latitude`, `longitude`, `location`  
+Categorical: `zip`, `city`, `state`
+
+**Testing type information**  
+Categorical: `nwea_or_scantron`
+
+**School Performance**  
+Categorical: `overal_rating`, `on_probation`, `growth_overall_level`, `student_performance_level`, 
+Discrete: `years_on_probation`  
+Continuous: `growth_overall_reading_and_math`, `reading_growth_grade_3`, `reading_growth_grade_4`, `reading_growth_grade_5`, `reading_growth_grade_6`, `reading_growth_grade_7`, `reading_growth_grade_8`, `reading_growth_all_grades`, `math_growth_grade_3`, `math_growth_grade_4`, `math_growth_grade_5`, `math_growth_grade_6`, `math_growth_grade_7`, `math_growth_grade_8`, `math_growth_all_grades`, `student_performance_reading_and_math`, `reading_performance_grade_3`, `reading_performance_grade_4`, `reading_performance_grade_5`, `reading_performance_grade_6`, `reading_performance_grade_7`, `reading_performance_grade_8`, `reading_performance_all_grades`, `math_performance_grade_3`, `math_performance_grade_4`, `math_performance_grade_5`, `math_performance_grade_6`, `math_performance_grade_7`, `math_performance_grade_8`, `math_performance_all_grades`, `reading_growth_african_american`, `reading_growth_hispanic`, `reading_growth_white`, `reading_growth_students_with_disabilities`, `reading_growth_english_language_learners`, `reading_growth_free_and_reduced_lunch`, `math_growth_african_american`, `math_growth_hispanic`, `math_growth_white`, `math_growth_students_with_disabilities`, `math_growth_english_language_learners`, `math_growth_free_and_reduced_lunch`
+
+**School Information**  
+Categorical: `overall_foundation`, `involved_families`, `supportive_environment`, `ambitious_instruction`, `effective_leaders`, `collaborative_teachers`, `safety`    
+Discrete: `blue_ribbon_award_year`  
+Continuous: `misconducts_resulting_in_suspensions_2011_percent`, `misconducts_resulting_in_suspensions_2012_percent`, `average_days_of_suspension_2011`, `average_days_of_suspension_2012`, `student_attendance_2011_percent`, `student_attendance_2012_percent`, `teacher_attendance_2011_percent`, `teacher_attendance_2012_percent`, `healthy_school_certified`, `blue_ribbon_award`
+
+This XML file was read in with the XML package. This package was chosen simply because it was the first one that was used in which a usable data frame was created from the XML file. 
+
+```{r wrangle, cache = TRUE}
+# Read the xml file into R.
+raw <- xmlParse("Chicago rows.xml")
+
+# Convert the read-in xml file into an R data frame.
+Chicago_school_raw <- xmlToDataFrame(nodes = xmlChildren(xmlRoot(raw)[["row"]]))
+
+# All data was read in as character type. This converts selected columns into numeric.
+num_col <- c(17:21, 23:27, 35:42, 51:82)
+Chicago_school_raw[, num_col] <- sapply(Chicago_school_raw[, num_col], as.numeric)
+
+# Function that returns the slopes of linear regressions between selected grade levels 
+# and selected subject matter
+grade_slope <- function(data, subj, start = 3, end = 8) {
+  vars <- c(paste0(subj, "_performance_grade_", start:end))
+  grades <- start:end
+  slopes <- data.frame(NA)
+  colnames(slopes) <- paste0(subj, "_grade_slope")
+  for (i in 1:dim(data)[1]) {
+    if (sum(is.na(data[i, vars])) > 0) {
+      slopes[i, 1] <- NA
+    } else {
+      slopes[i, 1] <- lm(as.numeric(data[i, vars]) ~ grades)[[1]][2]
+    }
+  }
+  return(slopes)
+}
+
+# Convert data frame to a tibble
+# Remove selected columns not of interest with select
+# Convert selected columns to factors or intergers with mutate
+# Add additional columns using the grade_slope function
+Chicago_school <- Chicago_school_raw %>% 
+  tbl_df() %>% 
+  select(-school_id, -school_name, -street_address, -city, -state, -phone_number, -website,
+         -blue_ribbon_award, -blue_ribbon_award_year, -x_coordinate, -y_coordinate, -latitude,
+         -longitude, -location) %>%  
+  mutate(growth_overall_level = factor(growth_overall_level, 
+                    levels = c("Far Above Average", "Above Average", "Average", 
+                               "Below Average", "Far Below Average", "Not Enough Data")),
+         student_performance_level = factor(student_performance_level,
+                    levels = c("Far Above Average", "Above Average", "Average", 
+                               "Below Average", "Far Below Average")),
+         overall_foundation = factor(overall_foundation,
+                    levels = c("Well-organized", "Moderately Organized", "Partially Organized",
+                               "Organized", "Not Yet Organized", "Not Enough Data")),
+         healthy_school_certified = factor(healthy_school_certified,
+                    levels = c("Yes", "Pending", "No")),
+         years_on_probation = as.integer(years_on_probation)) %>% 
+  mutate_at(vars(involved_families, supportive_environment, ambitious_instruction,
+                 effective_leaders, collaborative_teachers, safety), 
+            factor, levels = c("Very Strong", "Strong", "Neutral", "Weak", "Very Weak", 
+                              "Not Enough Data")) %>% 
+  mutate_at(vars(managed_by_network, geographic_network, overall_foundation, school_track,
+                 overall_rating, on_probation), 
+            factor) %>% 
+  cbind(grade_slope(., "reading")) %>% 
+  cbind(grade_slope(., "math"))
+```
+
+# Exploratory Data Analysis
+
+## Overall Growth versus Probation Status
+
+The following table looks at the whether a school is on probation or not by their overall growth classifications. There appears to be a difference in that schools on probation tend to be scored lower with respect to overall growth. 
+
+```{r}
+kable(table(Chicago_school$growth_overall_level, Chicago_school$on_probation),
+      caption = "Schools' overall growth level and whether they are on probation or not")
+```
+
+## Overall Growth versus Testing Type
+
+There are two testing types or services used: NWEA (NorthWest Evaluation Association) or Scantron. The following table shows the overall growth of schools split between those using NWEA or Scantron. There appears to be a tendency for Scantron schools to have lower overall growth levels.
+
+```{r}
+kable(table(Chicago_school$growth_overall_level, Chicago_school$nwea_or_scantron),
+      caption = "Schools' overal growth level by which testing system was utilized")
+```
+
+## Student Performance Level versus School Track
+
+There are two tracks: Standard which has a long summer break and Track E in which is closer to a year round school. The following table shows ratings of student performance levels versus the school track. There is a tendency for those in Track E to have poorer student performance levels.
+
+```{r}
+kable(table(Chicago_school$student_performance_level, Chicago_school$school_track),
+            caption = "Students' performance level by the school track")
+```
+
+## Student Reading/Math Performance Amongst Networks
+
+The following boxplot shows the distribution of student reading and math combined performances amongst the various networks that manage schools. The networds are ordered on the basis of their median values for combined student performance. The North-Northwest Side High School Network has the highest performers with the AUSL (Academy for Urban School Leadership) with the lowest performance levels.
+
+```{r}
+ggplot(Chicago_school, 
+       aes(reorder(managed_by_network, student_performance_reading_and_math, FUN = median), 
+           student_performance_reading_and_math)) +
+  geom_boxplot() +
+  coord_flip() +
+  ylab("Student Performance in Reading and Math") +
+  xlab("School Management Network")
+```
+
+## Overall Growth Amongst Management Networks
+
+This boxplot shows the overall growth scores of schools grouped by management networks. Networks are ordered based on their median values of overall growth. It should be noted the ordering is different than the graph above which focuses on overall performance whereas the following graph focuses on growth. 
+
+```{r}
+Chicago_school %>% 
+  filter(growth_overall_level != "Not Enough Data") %>% 
+  ggplot(aes(reorder(managed_by_network, growth_overall_reading_and_math, FUN = median), 
+             growth_overall_reading_and_math)) +
+    geom_boxplot() +
+    coord_flip() +
+    ylab("Overall Growth in Reading and Math") +
+    xlab("School Management Network")
+```
+
+## Overall Growth versus Performance in Reading/Math by Testing Type
+
+The following scatterplot shows the overall growth in combined reading and math versus student performance. The data is sepearted by the testing type. There appears to be differences in the relationship between growth and performance between the two testing types. For schools using the NWEA testing type, there does not appear to be a relationship between growth and performance (i.e., no slope). In contrast to this, for the Scantron testing schools, there is a positive relationship between growth and performance. 
+
+```{r}
+Chicago_school %>% 
+  filter(growth_overall_level != "Not Enough Data") %>% 
+  ggplot(aes(student_performance_reading_and_math,
+             growth_overall_reading_and_math,
+             color = nwea_or_scantron)) +
+    geom_point() +
+    xlab("Student Performance in Reading and Math") +
+    ylab("Overall Growth in Reading and Math") +
+    labs(color = "Testing Type")
+```
+
+## Math Performance versus Reading Performance by Testing Type
+
+The scatterplot below shows math performance versus reading performance across all the grades. This is separated by testing type. Linear regression fits are overlaid on the data. This fits show parallel lines that are shifted along the y-axis. This would suggest that while the two testing types yield similar performance amongst reading performance, The Scantron testing yields higher math performance. 
+
+```{r}
+ggplot(Chicago_school,
+       aes(reading_performance_all_grades,
+           math_performance_all_grades,
+           color = nwea_or_scantron)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  xlab("Reading Performance Across All Grades") +
+  ylab("Math Performance Across All Grades") +
+  labs(color = "Testing Type")
+```
+
+## Reading Performance by School Rating and Healthy Certification
+
+The following bar plot shows mean reading performance across all grades with error bars denoting standard deviations. Performance, as one might expect, differs amongst schools with different ratings. However, reading performance does not differ amongst schools with different statuses of Healthy Certification.
+
+```{r}
+Chicago_school %>% 
+  filter(overall_rating != "Not Enough Data") %>% 
+  ggplot(aes(overall_rating, 
+             reading_performance_all_grades, 
+             fill = healthy_school_certified)) +
+    stat_summary(geom = "errorbar", position = position_dodge(0.9), fun.data = mean_sdl, 
+                 fun.args = c(mult = 1), width = 0.4) +
+    stat_summary(geom = "bar", position = "dodge", fun.y = mean) +
+    xlab("Overall School Rating") +
+    ylab("Reading Performance for All Grades") +
+    labs(fill = "Healthy School Certification") +
+    theme(legend.position = "top")
+```
+
+## Grade Slopes: Math Performance versus Reading Performance
+
+For those schools with performance data for all grades from 3rd to 8th, the slope of a linear fit between performance and grade level was calculated. These can be viewed as whether grade scores tended to increase (positive slope) or decrease (negative slope) as one moves up the grade levels. 
+
+The following scatterplot is the slopes of math performance versus reading performance. There appears to be a one-to-one relationship amongst these slopes with no difference between school track types. 
+
+```{r}
+Chicago_school %>% 
+  filter(!is.na(reading_grade_slope)) %>% 
+  ggplot(aes(reading_grade_slope, math_grade_slope, color = school_track)) +
+    geom_point() +
+    geom_vline(xintercept = 0) +
+    geom_hline(yintercept = 0) +
+    xlab("Slope of Reading Performance") +
+    ylab("Slope of Math Performance") +
+    labs(color = "School Track")
+```
+
+## Math Slope, Reading Slope, Probation Status and Family Involvement
+
+The following set of scatterplots looks a the relationship between math and reading performance slopes through grade levels. School probation status is shown on the same graph with different colors while family involvement classification is used to create different graphs (facets). 
+
+There is a relationship between school probation status and family involvement in which the stronger the family involvement, the less likely a school is to be on probation. 
+
+School probation status and family involvement do not appear to have an impact on the relationship between math and reading grade slopes. However, there may be a higher likelihood to have negative reading and math grade slopes with higher levels of family involvement. 
+
+```{r}
+labels <- c(paste("Family Involvement :", c("Very Strong", "Strong", "Neutral", 
+                                            "Weak", "Very Weak")))
+names(labels) <- c("Very Strong", "Strong", "Neutral", "Weak", "Very Weak")
+
+Chicago_school %>% 
+  filter(!is.na(reading_grade_slope), involved_families != "Not Enough Data") %>% 
+  ggplot(aes(reading_grade_slope, math_grade_slope, color = on_probation)) +
+    geom_point() +
+    facet_wrap(~involved_families, labeller = labeller(involved_families = labels)) +
+    geom_vline(xintercept = 0) +
+    geom_hline(yintercept = 0) +
+    xlab("Slope of Reading Performance") +
+    ylab("Slope of Math Performance") +
+    labs(color = "School Probation") +
+    theme(legend.position = c(1, 0), legend.justification = c(1, 0))
+```
+
+# Future Analysis Directions
+
+This data set for Chicago schools for 2012 is rich for potential analyses. In particular, what are the factors associated with either higher student performance or growth? In the exploratory data analysis a difference between the two testing types (NWEA and Scantron) was noted. What is this difference associated with? Could this difference be explained by other factors? Bringing in other sources of data, such as income levels associated with the school districts or zip codes could help to understand relationships uncovered in within this data set. Additional years of data would also assist in validating any conclusions drawn from this data set.
