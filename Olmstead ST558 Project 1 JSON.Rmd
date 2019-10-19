@@ -1,0 +1,273 @@
+---
+title: "Olmstead ST558 Project 1 JSON"
+author: "Allen Olmstead"
+date: "October 18, 2019"
+output: 
+  html_document:
+    code_folding: hide
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, out.width = "800px")
+library(RJSONIO)
+library(rlist)
+library(knitr)
+library(tidyverse)
+```
+
+# JSON Introduction
+
+JSON stands for JavaScript Object Notation and is a standard data exchange format. JSON shares similarities to the XML format.
+
+There are several of the JSON file format over others. It supports easy and fast parsing of data since the syntax is light. It is widely accepted by differnet types of software. The syntax is easy, the structure is straightforward leading to files that are human readable. 
+
+# Packages for JSON import
+
+Three packages for using JSON files with R are: `rjson`, `jsonlite`, `RJSONIO`
+
+All three packages use a function named `fromJSON` to read bring a JSON file into the R environment. 
+
+After the data file in brought into the R environment, it can be converted to a data frame with the `as.data.frame` or `as_data_frame` functions. 
+
+These packages also contain functions for writing data out to a JSON file. 
+
+# Data input
+
+Data file was downloaded from [data.gov](https://catalog.data.gov/dataset/energy-usage-2010-24a67).
+
+Data description from the site:
+
+>Displays several units of energy consumption for households, businesses, and industries in the City of Chicago during 2010. Electric The data was aggregated from ComEd and Peoples Natural Gas by Accenture. Electrical and gas usage data comprises 88 percent of Chicago's buildings in 2010. The electricity data comprises 68 percent of overall electrical usage in the city while gas data comprises 81 percent of all gas consumption in Chicago for 2010.
+
+>Census blocks with less than 4 accounts is displayed at the Community Area without further geographic identifiers. This dataset also contains selected variables describing selected characteristics of the Census block population, physical housing, and occupancy. 
+
+This data set contains 67,051 lines of data with the following types of variables:  
+**location information**  
+Categorical: `community_area_name`, `census_block`  
+
+**building information**  
+Categorical: `building_type`, `building_subtype`  
+Discrete: `total_population`, `total_units`, `occupied_units`, `renter_occupied_housing_units`, `occupied_housing_units`  
+Continuous: `average_stories`, `average_building_age`, `average_housesize`, `occupied_units_percentage`, `renter_occupied_housing_percentage`  
+
+**electrical usage**
+Continuous: `kwh_january_2010` through `kmw_december_2010`, `total_kwh`, `kwh_total_sqft`, `kwh_mean_2010`, `kwh_standard_deviation_2010`, `kwh_1st_quartile_2010`, `kwh_2nd_quartile_2010`, `kwh_3rd_quartile_2010`, `kwh_maximum_2010`, `kwh_sqft_mean_2010`, `kwh_sqft_standard_deviation_2010`, `kwh_sqft_1st_quartile_2010`, `kwh_sqft_2nd_quartile_2010`, `kwh_sqft_3rd_quartile_2010`, `kwh_sqft_maximum_2010`  
+Categorical: `zero_kwh_accounts`  
+
+**natural gas usage**  
+Continuous: `therm_january_2010` through `therm_december_2010`, `total_therms`, `therms_total_sqft`, `therms_mean_2010`, `therms_standard_deviation_2010`, `therms_1st_quartile_2010`, `therms_2nd_quartile_2010`, `therms_3rd_quartile_2010`, `therms_maximum_2010`, `therms_sqft_mean_2010`, `therms_sqft_standard_deviation_2010`, `therms_sqft_1st_quartile_2010`, `therms_sqft_2nd_quartile_2010`, `therms_sqft_3rd_quartile_2010`, `therms_sqft_maximum_2010`  
+Categorical: `gas_accounts`  
+
+This JSON file was read in with the RJSONIO package. This package was chosen simply because it was the first one that was used in which a usable data frame was created from the JSON file. 
+
+```{r import, cache = TRUE}
+# Read JSON file into R
+raw <- fromJSON("Chicago rows.json")
+
+# Add NA values in empty spaces and unlist the file
+Chicago_energy_raw <- lapply(raw$data, function(x) {
+  x[sapply(x, is.null)] <- NA
+  unlist(x)
+}) 
+
+# Creation of data frame from JSON file data  
+Chicago_energy_raw <- as.data.frame(do.call("rbind", Chicago_energy_raw))
+
+# Bring in variable names from the meta data of the JSON file
+colnames(Chicago_energy_raw) <- as_vector(list.stack(list.select(raw$meta$view$columns, fieldName)))
+
+# Bring in variable descriptions (when present) from the meta data of the JSON file
+vars <- data.frame(name = NA, description = NA)
+for (i in 9:81) {
+  vars[i - 8, 1] <- raw$meta$view$columns[[i]]$fieldName
+  if (!is.null(raw$meta$view$columns[[i]]$description)) {
+    vars[i - 8, 2] <- raw$meta$view$columns[[i]]$description
+  } else {
+    vars[i - 8, 2] <- ""
+    }
+}
+
+# Fix two errors in the descriptions
+vars[10, 2] <- vars[9, 2]
+vars[9, 2] <- "Kilowatt hours (kWh) for May 2010"
+```
+
+```{r data_restructure}
+# This function converts either kwh or therms into the SI unit, MegaJoules
+to_megajoule <- function(x, energy_unit) {
+  if (tolower(energy_unit) == "kwh") {
+    x * 3.6
+  } else if (tolower(energy_unit) == "therm") {
+    x * 105.48
+  } else {
+    stop("Incorrect input type")
+  }
+}
+
+# Turn data frame into tibble and remove first few columns that do not contain relevant data
+# Mutate appropriate variables from factors to numeric
+# Add variables of energy consumption with MJ units
+# Rename a variable to something more meaningful
+Chicago_energy <- Chicago_energy_raw %>% 
+  tbl_df() %>% 
+  select(-starts_with(":")) %>% 
+  mutate_at(vars(kwh_january_2010:total_kwh, zero_kwh_accounts:total_therms, 
+                 kwh_total_sqft:ten_ohu_tot),
+            .funs = function(x) {as.numeric(levels(x))[x]}) %>%
+  mutate(total_mj = to_megajoule(total_kwh, "kwh") + to_megajoule(total_therms, "therm"),
+         ratio_kwh = to_megajoule(total_kwh, "kwh") / total_mj) %>% 
+  rename(occupied_housing_units = ten_ohu_tot)
+
+# Create a data frame with summarized data by the communities
+# Numeric variables are summed across a given community's entries
+# Outliers from the first graph are identified
+# The data set is ordered by total energy consumption
+# Additional varialbes for percent of energy consumption by kwh and ranking are added
+area_summary <- Chicago_energy %>% 
+  group_by(community_area_name) %>% 
+  summarise_at(vars(kwh_january_2010:total_kwh, zero_kwh_accounts:total_therms, kwh_total_sqft, 
+                 therms_total_sqft, total_population, total_units, occupied_units,
+                 occupied_housing_units, total_mj), 
+               sum, na.rm = TRUE) %>% 
+  mutate(kwh_therm_tot_outlier = ifelse(total_kwh > 480e6, TRUE, FALSE)) %>% 
+  arrange(total_mj) %>% 
+  mutate(mj_rank = 1:dim(.)[1],
+         ratio_kwh = to_megajoule(total_kwh, "kwh") / total_mj)
+```
+
+## 2010 Electricity versus Natural Gas Consumption
+
+Each data point in this graph represents a community. For almost all points, there is a linear relationship between the energy consumption in electricity versus natural gas. There are five outliers, however that are identified in red. These data points were not used in the linear fit shown.
+
+```{r}
+ggplot(area_summary, aes(total_therms/1e6, total_kwh/1e6, color = kwh_therm_tot_outlier)) +
+  geom_point() +
+  geom_smooth(data = subset(area_summary, kwh_therm_tot_outlier == FALSE), method = lm, se = FALSE) +
+  scale_color_manual(values = c("blue", "red")) +
+  xlab("2010 Natural Gas Consumption (million therm)") +
+  ylab("2010 Electricity Consumption (million kwh)") +
+  theme(legend.position = "none")
+```
+
+## Investigating the Outliers
+
+The bar graph shows the mean values for six variables to see if there is anything noticeably different amongst the five outliers identified above. However, this is not a good way to really evaluate this.
+
+The second graph overlays the outlier data points (in red) on a box and whisker plot of the non-outlier data. Here we see that the outlier communities tended to have higher occupied and total untis than the other communities.
+
+```{r}
+# A new data set is created to feed the following graphs
+# First the requied variables are selected and then the data frame is transposed to a long form
+area_summ_t <- area_summary %>% 
+  select(kwh_total_sqft, therms_total_sqft, total_population, total_units, occupied_units,
+         occupied_housing_units, kwh_therm_tot_outlier) %>% 
+  mutate_at(vars(kwh_total_sqft, therms_total_sqft), .fun = function(x) {x / 1000}) %>% 
+  gather(-kwh_therm_tot_outlier, key = vars, value = value)
+
+ggplot(area_summ_t, aes(vars, value, fill = kwh_therm_tot_outlier)) +
+  stat_summary(geom = "bar", position = "dodge", fun.y = mean) +
+  coord_flip() +
+  xlab(NULL) +
+  ylab("Values") +
+  scale_x_discrete(labels = c("Total Units", "Total Population", "Thousand Therms per Square Feet",
+                              "Occupied Units", "Occupied Housing Units", "Thousand KWH per Square Feet")) +
+  labs(fill = "Outlier?")
+
+ggplot() +
+  geom_boxplot(data = subset(area_summ_t, kwh_therm_tot_outlier == FALSE), aes(vars, value)) +
+  geom_point(data = subset(area_summ_t, kwh_therm_tot_outlier == TRUE), aes(vars, value), color = "red") +
+  coord_flip() +
+  ylab("Values") +
+  xlab(NULL) +
+  scale_x_discrete(labels = c("Total Units", "Total Population", "Thousand Therms per Square Feet",
+                              "Occupied Units", "Occupied Housing Units", "Thousand KWH per Square Feet"))
+```
+
+## Building Type versus Subtype
+
+The following table shows the number of data entries for building types (rows) and building sub-types( columns). There are several notable things with this table:  
+* Industrial type and subtype are mutally exclusive with other types and subtypes  
+* Commercial subtypes only exist for commerical types  
+* The single family subtype in the commercial type is likely a data entry error
+
+```{r}
+kable(table(Chicago_energy$building_type, Chicago_energy$building_subtype))
+```
+
+## Energy Use of Industrial Building Types
+
+All industrial building types were extracted from the data frame and grouped by community. The following table shows the energy usage in terms of electricity (kwh), natural gas (therm) and total (MJ). From this table, we see that Near West Side has substantially higher consumption of electrical and total energy. 
+
+```{r}
+Chicago_energy %>% 
+  filter(building_type == "Industrial") %>% 
+  group_by(community_area_name) %>% 
+  summarize_at(vars(total_kwh, total_therms), .funs = sum, 
+               na.rm = TRUE) %>% 
+  mutate(total_mj = to_megajoule(total_kwh, "kwh") + to_megajoule(total_therms, "therm")) %>% 
+  kable(digits = 0, col.names = c("Community Area", "Electricity (kwh)", "Natural Gas (therm)",
+                                  "Total Energy Use (MJ)"))
+```
+
+## Total Energy Use by Population in Residential Areas
+
+The following graph uses the full data set. Given the large number of data points, the scatterplot is made with transparent dots.
+
+A subset of the full data was used for this graph with only areas designated as residential used. These were divided into either single family or multi-family designations. Overall there does not appear to be any difference in the relationship between total energy use and total population between single and non-single family areas. As the total population increases, the total energy use increases. 
+
+```{r}
+Chicago_energy %>% 
+  filter(building_type == "Residential" & total_population > 0 & total_mj > 0) %>% 
+  mutate(single_family = ifelse(building_subtype == "Single Family", "Yes", "No")) %>% 
+  ggplot(aes(total_population, total_mj, color = single_family)) +
+    geom_point(alpha = 1/10, stroke = 0) +
+    scale_y_continuous(trans = "log10") +
+    ylab("Total Energy Use for 2010 (log MJ)") +
+    xlab("Total Population") +
+    labs(color = "Single Family") +
+    guides(color = guide_legend(override.aes = list(alpha = 1)))
+```
+
+# Energy Use versus Building Age for Commercial and Residential Areas
+
+As only three industrial sites reporting an average age above zero and power usage above zero, these graphs focus on commercial and residential areas. 
+
+Just looking at the x axis, building age, one can likely see economic periods of growth in Chicago when more buildings were being constructed. This pattern is similar between commercial and residential areas, with the period between 50 and 120 years ago representing most of the data. 
+
+For residential areas, there does not appear to be a relationship between total energy use and average building age. by contrast, for commerical areas, there is a tendency for higher energy use for newer builing areas. 
+
+```{r}
+Chicago_energy %>% 
+  filter(average_building_age > 0 & total_mj > 0 & 
+           (building_type == "Commercial" | building_type == "Residential")) %>% 
+  ggplot(aes(average_building_age, total_mj, building_type)) +
+    geom_point(alpha = 1/25, color = "red", fill = "red", stroke = 0) + 
+    facet_wrap(~building_type) +
+    scale_y_continuous(trans = "log10") +
+    ylab("Total Energy Use for 2010 (log MJ)") +
+    xlab("Average Building Age (yr)") 
+```
+
+## Ratio of Power Source for Selected Communities
+
+The communities were ranked in terms of total energy consumption. The five communities with the least energy consumption and the five communities with the largest energy consumption were extracted and compared in terms of the ratio of their power coming from electricity.
+
+The following bar plot shows the top and bottom five for total energy consumption. Communities are ordered by their total consumption (e.g., Loop has the highest consumption and Fuller Park has the lowest). With the exception of the top 3 energy consuming communities, the ratio of energy from electricity is similar. Interestingly amongst the top three the ranking of ratio of power from electricity matches that of total energy consumption. 
+
+```{r}
+area_summary %>% 
+  filter(mj_rank <= 5 | mj_rank >= dim(.)[1] - 4) %>% 
+  mutate(lower = ifelse(mj_rank <= 5, "Bottom 5", "Top 5")) %>% 
+  ggplot(aes(x = reorder(community_area_name, mj_rank), ratio_kwh, fill = lower)) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    xlab("Community") +
+    ylab("Ratio of Power from Electricity") +
+    labs(fill = "Total Power Usage Rank")
+```
+
+# Future Analysis Directions
+
+The data set included electrial and natural gas consumption broken down by the months of 2010. Looking for monthly differences in the data would one direction for additional analysis. Understanding more about the relationship between census block and community would also be interesting. Incorpating positional data (e.g., zipcodes on a map) would also bring a new dimension to the data, but this would need to come from a data source outside of this data set. 
